@@ -23,7 +23,7 @@
     <ClCompile Include="Sounds.cpp" />
     <ClCompile Include="gui.cpp" />
     <ClCompile Include="TextToSpeech.cpp" />
-    <ClCompile Include="WebSocketClient.cpp" />
+    <ClCompile Include="wss.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="imgui\imstb_truetype.h">
@@ -52,7 +52,7 @@
     <ClInclude Include="Sounds.h" />
     <ClInclude Include="gui.h" />
     <ClInclude Include="TextToSpeech.h" />
-    <ClInclude Include="WebSocketClient.h" />
+    <ClInclude Include="wss.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="imgui">

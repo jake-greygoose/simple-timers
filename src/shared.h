@@ -18,13 +18,24 @@ struct ActiveTimer {
     float remainingTime;
     bool isPaused;
     bool warningPlayed;
+    std::string roomId; // Empty for local timers, room ID for online timers
 
     // Default constructor - required for std::map
-    ActiveTimer() : id(""), remainingTime(0.0f), isPaused(true), warningPlayed(false) {}
+    ActiveTimer()
+        : id(""), remainingTime(0.0f), isPaused(true), warningPlayed(false), roomId("") {}
 
-    // Regular constructor
+    // Regular constructor - for local timers
     ActiveTimer(const std::string& timerId, float duration, bool paused)
-        : id(timerId), remainingTime(duration), isPaused(paused), warningPlayed(false) {}
+        : id(timerId), remainingTime(duration), isPaused(paused), warningPlayed(false), roomId("") {}
+
+    // Constructor for room timers
+    ActiveTimer(const std::string& timerId, float duration, bool paused, const std::string& roomId)
+        : id(timerId), remainingTime(duration), isPaused(paused), warningPlayed(false), roomId(roomId) {}
+
+    // Helper to check if this is a room timer
+    bool isRoomTimer() const {
+        return !roomId.empty();
+    }
 };
 
 // Globals declaration
@@ -78,3 +89,7 @@ void UnregisterTimerKeybind(const std::string& timerId);
 void LoadAddonIcons();
 bool InitializeSoundEngine();
 bool ScanCustomSoundsDirectory();
+
+void addOrUpdateActiveTimer(const ActiveTimer& newTimer);
+void removeRoomTimer(const std::string& timerId, const std::string& roomId);
+void removeAllRoomTimers(const std::string& roomId);

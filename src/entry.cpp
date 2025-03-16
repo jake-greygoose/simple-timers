@@ -10,7 +10,7 @@
 #include "TextToSpeech.h" 
 #include "Sounds.h"  // Include the new Sound.h header
 #include "gui.h" 
-//#include "WebSocketClient.h"
+#include"wss.h"
 
 /* proto */
 void AddonLoad(AddonAPI* aApi);
@@ -137,7 +137,67 @@ void AddonLoad(AddonAPI* aApi)
         APIDefs->Log(ELogLevel_WARNING, ADDON_NAME, "Failed to initialize sound engine");
     }
 
+    if (Settings::GetWebSocketEnabled()) {
+        try {
+            // Initialize WebSocket client
+            g_WebSocketClient = std::make_unique<WebSocketClient>();
 
+            // Set callbacks
+            g_WebSocketClient->setStatusCallback([](const std::string& status) {
+                Settings::SetWebSocketConnectionStatus(status);
+
+                // When connection is confirmed, request room data
+                if (status == "Connected" || status == "Connected (Secure)") {
+                    std::thread([]() {
+                        // Give a short delay to ensure connection is stable
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+                        if (g_WebSocketClient && g_WebSocketClient->isConnected()) {
+                            std::string currentRoomId = Settings::GetCurrentRoom();
+                            if (!currentRoomId.empty()) {
+                                // If we have a saved room, try to join it
+                                g_WebSocketClient->joinRoom(currentRoomId);
+
+                                if (APIDefs) {
+                                    char logMsg[256];
+                                    sprintf_s(logMsg, "Auto-joining saved room: %s", currentRoomId.c_str());
+                                    APIDefs->Log(ELogLevel_INFO, ADDON_NAME, logMsg);
+                                }
+                            }
+                            else {
+                                // If no saved room, request available rooms to get data
+                                g_WebSocketClient->refreshRooms();
+
+                                if (APIDefs) {
+                                    APIDefs->Log(ELogLevel_INFO, ADDON_NAME, "Requesting available rooms on connection");
+                                }
+                            }
+                        }
+                        }).detach();
+                }
+                });
+
+            g_WebSocketClient->setMessageCallback([](const std::string& direction, const std::string& message) {
+                Settings::AddWebSocketLogEntry(direction, message);
+                });
+
+            // Auto-connect if configured
+            if (Settings::GetWebSocketAutoConnect()) {
+                g_WebSocketClient->connect(Settings::GetWebSocketServerUrl());
+            }
+
+            if (APIDefs) {
+                APIDefs->Log(ELogLevel_INFO, ADDON_NAME, "WebSocket client initialized");
+            }
+        }
+        catch (const std::exception& e) {
+            if (APIDefs) {
+                char errorMsg[256];
+                sprintf_s(errorMsg, "WebSocket initialization error: %s", e.what());
+                APIDefs->Log(ELogLevel_WARNING, ADDON_NAME, errorMsg);
+            }
+        }
+    }
 
     initializeActiveTimers();
 }
@@ -165,9 +225,17 @@ void AddonUnload() {
         g_SoundEngine = nullptr;
     }
 
+    if (g_WebSocketClient) {
 
+        g_WebSocketClient->safeShutdown();
+        g_WebSocketClient.reset();
 
-    APIDefs->Log(ELogLevel_DEBUG, "My First addon", "<c=#ff0000>Signing off</c>, it was an honor commander.");
+        g_WebSocketClient = nullptr;
+
+        if (APIDefs) {
+            APIDefs->Log(ELogLevel_INFO, ADDON_NAME, "WebSocket client shutdown complete");
+        }
+    }
 }
 
 void PreRender()

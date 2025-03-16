@@ -3,6 +3,8 @@
 
 #include <string>
 
+class WebSocketClient;
+
 // Global variables shared by GUI components.
 extern bool showCreateTimerWindow;
 extern bool showEditTimerWindow;
@@ -17,5 +19,7 @@ void RenderSettingsWindow();
 void RenderWebSocketTab();
 
 void RenderOptions();
+void InitializeWebSocketClient(const std::string& serverUrl, bool autoConnect);
+bool SafeConnect(WebSocketClient* client, const std::string& url);
 
 #endif // GUI_H

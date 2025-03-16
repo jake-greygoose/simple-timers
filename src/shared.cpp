@@ -89,7 +89,7 @@ void UnregisterTimerKeybind(const std::string& timerId) {
     APIDefs->InputBinds.Deregister(keybindId.c_str());
 }
 
-// Updated to use the proper constructor
+// Updated to only load local timers during initialization
 void initializeActiveTimers() {
     // Create a map of existing timer states to preserve their values
     std::map<std::string, ActiveTimer> existingStates;
@@ -99,21 +99,31 @@ void initializeActiveTimers() {
         UnregisterTimerKeybind(active.id);
     }
 
-    // Clear and reconstruct the active timers list
+    // Clear the active timers list
     activeTimers.clear();
 
-    // For each settings timer, either restore existing state or create new
+    // For each settings timer, only load local (non-room) timers
     for (const auto& timer : Settings::timers) {
-        if (existingStates.count(timer.id) > 0) {
-            // Preserve existing state
-            activeTimers.push_back(existingStates[timer.id]);
+        if (!timer.isRoomTimer) {
+            // Regular local timer - include these
+            if (existingStates.count(timer.id) > 0) {
+                // Use addOrUpdateActiveTimer to add with preserved state
+                addOrUpdateActiveTimer(existingStates[timer.id]);
+            }
+            else {
+                // Create new timer state
+                addOrUpdateActiveTimer(ActiveTimer(timer.id, timer.duration, true));
+            }
+            // Register keybind for this timer
+            RegisterTimerKeybind(timer.id);
         }
-        else {
-            // Create new timer state using the constructor
-            activeTimers.push_back(ActiveTimer(timer.id, timer.duration, true));
-        }
-        // Register keybind for this timer
-        RegisterTimerKeybind(timer.id);
+        // Skip all room timers during initialization
+    }
+
+    if (APIDefs) {
+        char logMsg[256];
+        sprintf_s(logMsg, "Initialized %zu local timers", activeTimers.size());
+        APIDefs->Log(ELogLevel_INFO, ADDON_NAME, logMsg);
     }
 }
 
@@ -177,6 +187,93 @@ bool ScanCustomSoundsDirectory() {
 
     return false;
 }
+
+void addOrUpdateActiveTimer(const ActiveTimer& newTimer) {
+    // Look for an existing timer with the same id
+    auto it = std::find_if(activeTimers.begin(), activeTimers.end(),
+        [&newTimer](const ActiveTimer& t) {
+            return t.id == newTimer.id &&
+                (t.roomId == newTimer.roomId || newTimer.roomId.empty() || t.roomId.empty());
+        });
+
+    if (it != activeTimers.end()) {
+        // Timer already exists; update its state
+        it->remainingTime = newTimer.remainingTime;
+        it->isPaused = newTimer.isPaused;
+        it->warningPlayed = newTimer.warningPlayed;
+
+        // Only update roomId if the new timer is from a room
+        if (!newTimer.roomId.empty()) {
+            it->roomId = newTimer.roomId;
+        }
+
+        if (APIDefs) {
+            APIDefs->Log(ELogLevel_DEBUG, ADDON_NAME, "Updated existing timer in active timers list");
+        }
+    }
+    else {
+        // Timer doesn't exist; add it
+        activeTimers.push_back(newTimer);
+
+        // Only register keybind for non-room timers or if we're explicitly adding a room timer
+        if (!newTimer.isRoomTimer() || !newTimer.roomId.empty()) {
+            RegisterTimerKeybind(newTimer.id);
+        }
+
+        if (APIDefs) {
+            char logMsg[256];
+            sprintf_s(logMsg, "Added new timer to active timers list: %s", newTimer.id.c_str());
+            APIDefs->Log(ELogLevel_DEBUG, ADDON_NAME, logMsg);
+        }
+    }
+}
+
+// Function to remove a room timer from the active timers list
+void removeRoomTimer(const std::string& timerId, const std::string& roomId) {
+    auto it = std::find_if(activeTimers.begin(), activeTimers.end(),
+        [&](const ActiveTimer& timer) {
+            return timer.id == timerId && timer.roomId == roomId;
+        });
+
+    if (it != activeTimers.end()) {
+        // Unregister any keybind associated with this timer
+        UnregisterTimerKeybind(it->id);
+
+        // Remove the timer from the active list
+        activeTimers.erase(it);
+
+        if (APIDefs) {
+            char logMsg[256];
+            sprintf_s(logMsg, "Removed room timer %s from active timers", timerId.c_str());
+            APIDefs->Log(ELogLevel_INFO, ADDON_NAME, logMsg);
+        }
+    }
+}
+
+// Function to remove all timers for a specific room
+void removeAllRoomTimers(const std::string& roomId) {
+    auto it = activeTimers.begin();
+    while (it != activeTimers.end()) {
+        if (it->isRoomTimer() && it->roomId == roomId) {
+            // Unregister any keybind associated with this timer
+            UnregisterTimerKeybind(it->id);
+
+            // Remove the timer and get the next iterator
+            it = activeTimers.erase(it);
+        }
+        else {
+            // Move to next timer
+            ++it;
+        }
+    }
+
+    if (APIDefs) {
+        char logMsg[256];
+        sprintf_s(logMsg, "Removed all timers for room %s", roomId.c_str());
+        APIDefs->Log(ELogLevel_INFO, ADDON_NAME, logMsg);
+    }
+}
+
 
 // Helper function to initialize the sound engine and load default sounds
 bool InitializeSoundEngine() {

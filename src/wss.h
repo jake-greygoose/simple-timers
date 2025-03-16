@@ -6,9 +6,10 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <unordered_set>
 #include "nlohmann/json.hpp"
 
-// Forward declaration for implementation class
+// Don't forward declare WebSocket++ types - we'll use the pimpl pattern fully
 class WebSocketClientImpl;
 
 using json = nlohmann::json;
@@ -22,6 +23,9 @@ public:
     bool connect(const std::string& url);
     void disconnect();
     bool isConnected() const;
+
+    // Safe shutdown method for addon unloading
+    void safeShutdown();
 
     // Connection information
     bool isSecureConnection() const;
@@ -49,25 +53,49 @@ public:
     using MessageCallback = std::function<void(const std::string&, const std::string&)>;
     void setMessageCallback(MessageCallback callback);
 
+    // Room management
+    bool joinRoom(const std::string& roomId, const std::string& password = "");
+    bool createRoom(const std::string& name, bool isPublic, const std::string& password = "");
+    bool leaveRoom();
+    bool refreshRooms();
+
+    // Timer subscription
+    bool subscribeToTimer(const std::string& timerId, const std::string& roomId = "");
+    bool unsubscribeFromTimer(const std::string& timerId, const std::string& roomId = "");
+    void loadSubscribedTimersForRoom(const std::string& roomId, const std::unordered_set<std::string>& validTimerIds);
+    void cleanupInvalidTimers(const std::unordered_set<std::string>& validTimerIds, const std::string& roomId);
+
+
 private:
-    // Pimpl idiom to hide WebSocket++ implementation details
+    // Private implementation (pimpl pattern)
     std::unique_ptr<WebSocketClientImpl> m_impl;
 
-    // Basic connection info that doesn't depend on WebSocket++
+    // Connection information
     std::string m_url;
     std::atomic<bool> m_connected;
     std::atomic<bool> m_shuttingDown;
+    std::atomic<bool> m_isShuttingDown;
     std::atomic<bool> m_isSecure;
 
-    // Callback storage
+    // Callbacks
     StatusCallback m_statusCallback;
     MessageCallback m_messageCallback;
 
     // Thread safety
     std::mutex m_sendMutex;
+    std::mutex m_shutdownMutex;
 
     // Message handling
     void handleMessage(const std::string& message);
+
+    // Set up event handlers
+    void setupEventHandlers();
+
+
+    // Helper for processing room-related messages
+    void handleRoomMessage(const json& data);
+    void handleTimerMessage(const json& data);
+
 };
 
 // Global WebSocket client instance
